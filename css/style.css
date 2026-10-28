@@ -22,6 +22,7 @@ body {
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 input, select, textarea { font: inherit; color: inherit; }
 h1, h2, h3, p { margin: 0; }
+[hidden] { display: none !important; }
 
 #app {
   width: 100%; max-width: 430px; height: 100dvh; position: relative; overflow: hidden;
@@ -345,3 +346,88 @@ button.legend-row { width: 100%; text-align: left; }
 .onb .onb-link { font-size: 12.5px; color: #59636d; margin: 2px 0 0; }
 .onb-link button { font: inherit; color: #14181c; font-weight: 600; text-decoration: underline; }
 .onb button.onb-link { font-size: 16px; }
+
+/* ===== v5: close-up mascot, hands-on tutorial, adjustable crop editor ===== */
+
+/* --- close-up mascot (head) on splash + onboarding --- */
+.mascot { backface-visibility: hidden; }
+.splash .big-bear { left: 0; right: 0; bottom: 0; width: 100%; display: flex; justify-content: center; }
+.splash .big-bear .mascot { width: 86%; max-width: 400px; height: auto; margin: 0 auto; }
+.onb-card .mascot.close {
+  position: absolute; left: 50%; top: 50%; width: auto; height: 88%; max-width: 88%;
+  transform: translate(-50%, -50%); object-fit: contain;
+}
+
+/* --- tutorial overlay (hands-on: only the spotlighted area is usable) --- */
+#app[data-tutmode] .screen { animation: none; }
+#app[data-tutmode] .modal { max-height: 60%; }
+.tut { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
+.tut.nospot { pointer-events: auto; background: rgba(20, 30, 40, .62); }
+.tut.hasmodal { pointer-events: none; background: none; }
+.tut.hasmodal .tut-spot, .tut.hasmodal .tut-blk { display: none !important; }
+.tut-blk { position: absolute; pointer-events: auto; }
+.tut-spot {
+  position: absolute; display: none; border-radius: 16px; border: 2px solid #fff; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(20, 30, 40, .62);
+}
+.tut-spot.solid { pointer-events: auto; }
+.tut-card {
+  position: absolute; left: 14px; right: 14px; top: 50%; background: #fff; border-radius: 20px; pointer-events: auto;
+  padding: 14px 16px 12px; box-shadow: 0 10px 30px rgba(20, 30, 40, .35);
+}
+.tut-head { display: flex; align-items: center; gap: 10px; }
+.tut-head small { display: block; font-size: 11px; color: var(--muted); }
+.tut-head b { font-size: 15px; }
+.tut-try { color: #1d7a2e; font-weight: 600; }
+.tut-card p { font-size: 13px; line-height: 1.45; color: #33495c; margin: 8px 0 10px; }
+.tut-prog { height: 4px; border-radius: 2px; background: #e2f0f2; overflow: hidden; }
+.tut-prog i { display: block; height: 100%; background: var(--blue); }
+.tut-btns { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.tut-skip { font-size: 12px; color: var(--muted); text-decoration: underline; padding: 8px 4px; }
+.tut-btn { padding: 8px 18px; border-radius: 20px; border: 1.5px solid var(--blue); background: #fff; color: var(--blue); font-weight: 600; font-size: 13px; }
+.tut-btn.primary { background: var(--blue); color: #fff; }
+.tut-btn.soft { border-color: #cfe6ea; color: var(--muted); }
+
+/* --- scan screen: grouped controls + crop editor (drag handles to adjust the crop box) --- */
+.scanctl { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.cam .frame.cropping { display: flex; align-items: center; justify-content: center; overflow: hidden; background: #1a1f25; }
+.crop-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; }
+.crop-wrap { position: relative; max-width: 100%; line-height: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.cam .frame .crop-wrap img {
+  display: block; width: auto; height: auto; max-width: 100%; max-height: calc(55vh - 38px);
+  object-fit: initial; pointer-events: none; -webkit-user-drag: none;
+}
+.crop-box {
+  position: absolute; border: 2px solid #39ff14; cursor: move; touch-action: none;
+  box-shadow: 0 0 0 9999px rgba(10, 15, 20, .55);
+}
+/* rule-of-thirds guide lines inside the box */
+.crop-box::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .4;
+  background:
+    linear-gradient(#fff, #fff) 33.33% 0 / 1px 100% no-repeat,
+    linear-gradient(#fff, #fff) 66.66% 0 / 1px 100% no-repeat,
+    linear-gradient(#fff, #fff) 0 33.33% / 100% 1px no-repeat,
+    linear-gradient(#fff, #fff) 0 66.66% / 100% 1px no-repeat;
+}
+.crop-box i { position: absolute; width: 38px; height: 38px; margin: -19px 0 0 -19px; z-index: 2; }
+.crop-box i::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border-radius: 50%; background: #fff; border: 2.5px solid #39ff14; box-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+}
+.crop-box .h-t::after, .crop-box .h-b::after { width: 26px; height: 10px; margin: -5px 0 0 -13px; border-radius: 5px; }
+.crop-box .h-l::after, .crop-box .h-r::after { width: 10px; height: 26px; margin: -13px 0 0 -5px; border-radius: 5px; }
+.crop-box .h-tl { left: 0; top: 0; cursor: nwse-resize; }
+.crop-box .h-t { left: 50%; top: 0; cursor: ns-resize; }
+.crop-box .h-tr { left: 100%; top: 0; cursor: nesw-resize; }
+.crop-box .h-r { left: 100%; top: 50%; cursor: ew-resize; }
+.crop-box .h-br { left: 100%; top: 100%; cursor: nwse-resize; }
+.crop-box .h-b { left: 50%; top: 100%; cursor: ns-resize; }
+.crop-box .h-bl { left: 0; top: 100%; cursor: nesw-resize; }
+.crop-box .h-l { left: 0; top: 50%; cursor: ew-resize; }
+
+/* --- login (required fields + inline errors) --- */
+.screen.onb { overflow-y: auto; }
+.onb.login { padding-top: clamp(28px, 6dvh, 60px); }
+.field-err { color: var(--red); font-size: 12px; font-weight: 600; min-height: 16px; margin-top: 8px; }
+.input.bad { border-color: var(--red); }

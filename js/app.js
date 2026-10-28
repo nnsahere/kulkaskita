@@ -1,12 +1,12 @@
 /* KulkasKita - web app (vanilla JS, data stored in localStorage)
  *
  * Map of this file:
- *   1. Asset config     : mascot moods, poses, navbar icons
+ *   1. Asset config     : mascot moods, poses, close-up mascot, navbar icons
  *   2. State & storage  : S is saved to localStorage
  *   3. UI components    : mascot, topbar, navbar, item row, hero card, gauge card, freshness popup
- *   4. Screens (V.*)    : each V.xxx function returns the HTML of one screen
- *   5. OCR pipeline     : photo -> preprocess -> Tesseract -> line parser -> highlight -> review
- *   6. Events & router  : clicks, inputs, hash router (#/home, #/scan, ...)
+ *   4. Screens (V.*)    : each V.xxx function returns the HTML of one screen (incl. V.tutorial)
+ *   5. OCR pipeline     : photo -> CROP -> preprocess -> Tesseract -> line parser -> highlight -> review
+ *   6. Events & router  : clicks, inputs, hash router (#/home, #/scan, #/tutorial/0 ...)
  */
 (function () {
   const $app = document.getElementById('app');
@@ -26,7 +26,10 @@
     basi: 'Queasy. Past its date, check before eating.',
   };
   // Full-body poses: assets/pose-<n>.png. To swap a pose on a screen, just change its number here.
-  const POSE = { splash: 1, onb1: 2, onb2: 6, onb3: 4, login: 5, add: 3, empty: 3, happy: 6, recipes: 5 };
+  const POSE = { login: 5, add: 3, empty: 3, happy: 6, recipes: 5 };
+  // CLOSE-UP mascot (head only, sharper than the full-body pose) for the splash and onboarding screens.
+  // The value is a mood file: assets/mascot-<mood>.png (aman, baik, cukup, hampir, basi). Change the mood per screen here.
+  const CLOSE = { splash: 'aman', onb1: 'aman', onb2: 'cukup', onb3: 'baik' };
   // Navbar icons: assets/<file>; the emoji is used if the file is missing.
   const NAV = {
     home: ['nav-home.png', '🏠', 'Home'],
@@ -42,8 +45,17 @@
     return { user: null, items: [], history: [], shopping: [], plan: {}, notif: false, lastNotif: '' };
   }
   let S = load();
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+  // Tutorial mode swaps S for an empty copy (tutBackup holds the real data) and save() is paused, so nothing is lost.
+  let tutBackup = null, tutI = 0, tutFrom = '', tutDid = {};
+  let crop = null; // photo crop editor state: { cv: canvas, box: {x,y,w,h} (0..1), url }
+  function save() { if (tutBackup) return; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
   const uid = () => Math.random().toString(36).slice(2, 9);
+  // Demo-level password hash (this app has no server, so accounts live only on this device).
+  // SHA-256 when the browser allows it (https/localhost), a simple fallback hash otherwise.
+  async function hashPw(txt) {
+    try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''); }
+    catch (e) { let h = 5381; for (let i = 0; i < txt.length; i++) h = ((h << 5) + h + txt.charCodeAt(i)) | 0; return 'f' + h; }
+  }
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const today = () => new Date();
   const fmt = iso => { const d = new Date(iso + 'T00:00:00'); return MONTHS[d.getMonth()].slice(0, 3) + ' ' + d.getDate() + ', ' + d.getFullYear(); };
@@ -195,7 +207,7 @@
 
   V.splash = () => {
     timer = setTimeout(() => go(S.user ? 'home' : 'onb/1'), 2200);
-    return '<div class="screen splash"><div class="splash-title"><h1>KulkasKita</h1><p>Eat it before it expires.</p></div><div class="big-bear">' + pose('splash', '', 'mood-aman') + '</div></div>';
+    return '<div class="screen splash"><div class="splash-title"><h1>KulkasKita</h1><p>Eat it before it expires.</p></div><div class="big-bear">' + head(CLOSE.splash, '', 'close mood-' + CLOSE.splash) + '</div></div>';
   };
 
   // Small line icons for the onboarding chips
@@ -215,19 +227,23 @@
   ];
   V.onb = n => {
     n = Math.min(3, Math.max(1, +n || 1)); const o = ONB[n - 1];
+    tutFrom = '';
     const btns = n === 1 ? '<button class="onb-btn" data-go="onb/2">Next</button><p class="onb-link">Have an account? <button data-go="login">Log in</button></p>'
       : n === 2 ? '<button class="onb-btn" data-go="onb/3">Next</button><button class="onb-link" data-go="onb/1">Back</button>'
-      : '<button class="onb-btn"<button class="onb-btn ghost" data-go="login">Get Started</button>';
+      : '<button class="onb-btn" data-go="login">Get Started</button><button class="onb-link" data-go="onb/2">Back</button>';
     return '<div class="screen onb"><div class="onb-top"><span>' + n + '/3</span>' + (n < 3 ? '<button data-go="login">SKIP</button>' : '') + '</div>' +
-      '<div class="onb-card">' + pose(o[3]) + '</div>' +
+      '<div class="onb-card"><img class="mascot close" src="assets/mascot-closeup' + n + '.png" alt="KulkasKita mascot" onerror="this.onerror=null;this.src=\'assets/mascot-aman.png\'"></div>' +
       '<h2>' + o[0] + '</h2><p class="onb-desc">' + o[1] + '</p><div class="onb-chips">' + o[2].map(c => '<span class="onb-chip">' + chipIc(c[0]) + c[1] + '</span>').join('') + '</div>' +
       '<div class="onb-actions">' + btns + '</div></div>';
   };
 
-  V.login = () => '<div class="screen onb"><div style="text-align:center">' + pose('login', 'height:190px;margin:6px auto') + '<h2>Welcome!</h2><p>Sign in to start protecting your fridge.</p></div>' +
-    '<label for="lname">Nickname</label><input id="lname" class="input" placeholder="e.g. Kay" value="' + esc(S.user ? S.user.name : '') + '" autocomplete="nickname">' +
-    '<label for="lmail">Email (optional)</label><input id="lmail" class="input" type="email" placeholder="name@email.com" autocomplete="email">' +
-    '<button class="btn primary" data-act="login">Sign in</button><p style="text-align:center;font-size:11px;color:var(--muted);margin-top:10px">Your data is stored on this device. We fill your fridge with sample items so you can try everything right away.</p></div>';
+  // LOGIN (required): nickname + email + password are all validated in the 'login' action below.
+  V.login = () => '<div class="screen onb login"><div style="text-align:center">' + pose('login', 'height:150px;margin:0 auto') + '<h2>Welcome!</h2><p>Sign in to start protecting your fridge.</p></div>' +
+    '<label for="lname">Nickname</label><input id="lname" class="input" placeholder="e.g. Kay" maxlength="20" value="' + esc(S.user ? S.user.name : '') + '" autocomplete="nickname">' +
+    '<label for="lmail">Email</label><input id="lmail" class="input" type="email" placeholder="name@email.com" autocomplete="email">' +
+    '<label for="lpass">Password</label><input id="lpass" class="input" type="password" placeholder="At least 6 characters" autocomplete="current-password">' +
+    '<div class="field-err" id="lerr" role="alert"></div>' +
+    '<button class="btn primary" data-act="login">Sign in</button><p style="text-align:center;font-size:11px;color:var(--muted);margin-top:10px">New email = a new account is created on this device. Your data stays on this device. We fill your fridge with sample items, then show a quick tutorial you can skip.</p></div>';
 
   // HOME: only 4 blocks -> expiring card, rescue gauge, fridge list, recipe ideas
   V.home = () => {
@@ -272,13 +288,22 @@
     '<button class="choice" data-go="scan"><div class="ic">📷</div><div><b>Scan Receipt</b><small>AI recommended · automatically logs item names, quantities and estimated expiry dates</small></div></button>' +
     '<button class="choice" data-go="manual"><div class="ic">✏️</div><div><b>Add Manually</b><small>Type the item name, quantity and storage date yourself</small></div></button>', 'add');
 
+  // SCAN: camera frame. Flow: pick photo -> crop editor (#cropctl) -> "Save & scan" -> OCR. Normal buttons live in #scanctl.
+  const ghostBtn = 'style="color:#fff;border-color:#fff;background:transparent"';
   V.scan = () => '<div class="screen"><div class="cam"><div style="align-self:flex-start;width:100%"><button class="back" data-go="add" style="color:#fff" aria-label="Back">‹</button></div>' +
-    '<div class="frame" id="frame"><div style="padding:20px;opacity:.8">📄<br>Place the receipt inside the frame<br>and make sure the text is clear.</div></div>' +
+    '<div class="frame" id="frame"><div style="padding:20px;opacity:.8">📄<br>Place the receipt inside the frame<br>and make sure the text is clear.<br><small>You can crop the photo before scanning.</small></div></div>' +
     '<div class="hint" id="scanhint" aria-live="polite">Point the camera at your receipt</div><div class="err" id="scanerr" role="alert"></div>' +
     '<div class="progress" id="prog" style="width:100%;display:none"><i></i></div>' +
-    '<button class="shutter" data-act="pick-cam" aria-label="Take a photo of the receipt">📷</button>' +
-    '<div class="btn-row" style="width:100%"><button class="btn yellow" data-act="pick-gal">Choose from gallery</button><button class="btn yellow" data-act="demo-receipt">Sample receipt</button></div>' +
-    '<button class="btn" style="color:#fff;border-color:#fff;background:transparent" data-go="manual">Add manually instead</button>' +
+    '<div class="scanctl" id="scanctl">' +
+      '<button class="shutter" data-act="pick-cam" aria-label="Take a photo of the receipt">📷</button>' +
+      '<div class="btn-row" style="width:100%"><button class="btn yellow" data-act="pick-gal">Choose from gallery</button><button class="btn yellow" data-act="demo-receipt">Sample receipt</button></div>' +
+      '<button class="btn" ' + ghostBtn + ' data-go="manual">Add manually instead</button>' +
+    '</div>' +
+    '<div class="scanctl" id="cropctl" hidden>' +
+      '<div class="btn-row" style="width:100%"><button class="btn" ' + ghostBtn + ' data-act="crop-rotate">⟳ Rotate</button><button class="btn" ' + ghostBtn + ' data-act="crop-reset">Reset</button></div>' +
+      '<button class="btn yellow" data-act="crop-save">✂️ Save &amp; scan</button>' +
+      '<button class="btn" ' + ghostBtn + ' data-act="crop-cancel">Cancel</button>' +
+    '</div>' +
     '<input type="file" id="fcam" accept="image/*" capture="environment" hidden><input type="file" id="fgal" accept="image/*" hidden></div></div>';
 
   V.review = () => {
@@ -366,10 +391,122 @@
     '<div class="card yellow"><b>Account</b><div class="setting"><span>Change nickname</span><button class="btn small" data-act="rename">Change</button></div></div>' +
     '<div class="card yellow"><div class="setting"><span>Expiry notifications</span><button class="switch ' + (S.notif ? 'on' : '') + '" data-act="notif" aria-label="Notifications" role="switch" aria-checked="' + !!S.notif + '"></button></div><small style="color:var(--muted)">Reminders appear in the app 1-3 days before expiry. Turn on to also get browser notifications while the app is open.</small></div>' +
     '<div class="card yellow"><b>Demo mode</b><div class="setting"><span>Bear moods</span><button class="btn small" data-act="legend">View</button></div><small style="color:var(--muted)">Fast-forward the clock by 1 day to watch the bear change expression.</small><button class="btn yellow" data-act="ff">⏩ Fast-forward 1 day</button></div>' +
+    '<div class="card yellow"><div class="setting"><span>App tutorial</span><button class="btn small" data-act="tutorial">Replay</button></div><small style="color:var(--muted)">A quick tour of every feature, shown with an empty fridge. Your own data is not touched.</small></div>' +
     '<button class="btn" data-act="reset">Reset sample data</button><button class="btn danger" data-act="logout">Sign out</button>', null);
 
+  /* ---- TUTORIAL (hands-on practice) ----
+   * Opened right after the first login (#/tutorial/0) or from Profile > Replay. It runs on the REAL screens with a practice fridge:
+   * your real data is parked in tutBackup, save() is paused, and everything is restored when the tutorial ends or is skipped.
+   * Each step in TUT:  r = screen to be on, t = CSS selector(s) to spotlight (omit = centered card),
+   *   goal = function returning true once the user did the task (omit = info step with a Next button).
+   * Only the spotlighted area is clickable. "Skip step" and "Skip tutorial" are always available. Edit TUT to change the tour.
+   */
+  const route = () => location.hash.replace(/^#\/?/, '').split('/')[0] || 'splash';
+  const NAVB = k => '.nav button[data-go="' + k + '"]';
+  const TUT = [
+    { r: 'home', mood: 'aman', btn: "Let's try", title: "Let's try KulkasKita!", text: 'Practice every feature with a pretend fridge. Nothing you do here is saved. You can skip any step, or the whole tutorial, at any time.' },
+    { r: 'home', t: '.hero', mood: 'baik', title: 'Your fridge bear', text: "The bear's mood shows how fresh your fridge is, based on the item closest to expiry. Tap the bear or the i button any time for the freshness guide." },
+    { r: 'home', t: '.gauge-card', mood: 'aman', title: 'Food rescue', text: 'Counts the food you used before it expired and the food that was wasted. It fills up as you use your items.' },
+    { r: 'home', t: NAVB('add'), goal: () => route() === 'add', mood: 'aman', title: 'Add your first item', text: 'Tap the + button in the menu.' },
+    { r: 'add', t: '.choice[data-go="manual"]', goal: () => route() === 'manual', mood: 'aman', title: 'Add manually', text: 'Choose Add Manually. Scanning a receipt comes a bit later.' },
+    { r: 'manual', t: '#mname, .grid2, [data-act="save-manual"]', goal: () => S.items.length > 0, mood: 'baik', title: 'Fill in an item', text: 'Type Eggs in the name and tap outside the box. The expiry date fills in by itself. Then tap Save to fridge.' },
+    { r: 'home', t: '.hero', mood: 'baik', title: 'The bear reacts', text: 'Now there is food in your fridge, so the bear tells you how it is doing.' },
+    { r: 'home', t: NAVB('fridge'), goal: () => route() === 'fridge', mood: 'baik', title: 'Open your fridge', text: 'Tap the fridge tab.' },
+    { r: 'fridge', t: '#search, .chips', mood: 'baik', title: 'Search and filters', text: 'Search, or filter by freshness level and category. Handy once the fridge gets full.' },
+    { r: 'fridge', t: '.row', goal: () => route() === 'item', mood: 'baik', title: 'Open an item', text: 'Tap your item to see its details.' },
+    { r: 'item', t: '[data-field="expiry"], [data-field="qty"]', mood: 'aman', title: 'Item details', text: 'Fix the expiry date or quantity here if the estimate is off. When you finish an item, mark it Used up or Wasted below.' },
+    { r: 'item', t: '[data-act="recipe-for"]', goal: () => route() === 'recipes', mood: 'aman', title: 'Find recipes', text: 'Tap Find recipes with this item.' },
+    { r: 'recipes', t: '.row.light', goal: () => route() === 'recipe', mood: 'aman', title: 'Pick a recipe', text: 'Recipes are matched to your fridge. Tap one to open it. (No recipe showing? Use Skip step.)' },
+    { r: 'recipe', t: '[data-act="plan-pick"]', goal: () => Object.keys(S.plan).length > 0, mood: 'baik', title: 'Plan the meal', text: 'Tap + Meal plan, choose a day and a meal, then tap Save. Cook this marks the ingredients as used, and + Shopping list adds missing ones.' },
+    { r: 'mealplan', t: '.week, .meal', mood: 'baik', title: 'Your meal plan', text: 'Your dish now sits in its slot. Tap a day to switch days, or a slot to change the dish.' },
+    { r: 'mealplan', t: '[data-act="autoplan"]', goal: () => !!tutDid.autoplan, mood: 'aman', title: 'Auto-fill', text: 'Tap Auto-fill from my fridge and let the app plan the rest of the day.' },
+    { r: 'mealplan', t: NAVB('shopping'), goal: () => route() === 'shopping', mood: 'aman', title: 'Shopping list', text: 'Tap the cart tab.' },
+    { r: 'shopping', t: '#shopin, [data-act="shop-add"]', goal: () => S.shopping.length > 0, mood: 'baik', title: 'Add to the list', text: 'Type something you need, like Milk, and tap +. Items you use up are added here automatically.' },
+    { r: 'shopping', t: NAVB('add'), goal: () => route() === 'add', mood: 'aman', title: 'Scan a receipt', text: 'Now the fast way to fill a fridge. Tap + again.' },
+    { r: 'add', t: '.choice[data-go="scan"]', goal: () => route() === 'scan', mood: 'aman', title: 'Scan Receipt', text: 'Tap Scan Receipt.' },
+    { r: 'scan', t: '#scanctl', mood: 'hampir', title: 'Camera, gallery, sample', text: 'The shutter takes a photo and the gallery picks one. After either, you crop the photo to just the receipt, then tap Save & scan.' },
+    { r: 'scan', t: '[data-act="demo-receipt"]', goal: () => route() === 'review', mood: 'hampir', title: 'Try the sample receipt', text: 'Tap Sample receipt. The app reads it like a real photo.' },
+    { r: 'review', t: '[data-act="save-draft"]', goal: () => route() === 'home', mood: 'baik', title: 'Review and save', text: 'Every item is listed with its name, quantity, category and expiry date. You can edit them. Tap Save to add them to the fridge.' },
+    { r: 'home', t: '.topbar [data-go="notifications"]', goal: () => route() === 'notifications', mood: 'cukup', title: 'Expiry alerts', text: 'Tap the bell to see items that expire within 3 days.' },
+    { r: 'notifications', t: '.topbar .avatar', goal: () => route() === 'profile', mood: 'aman', title: 'Profile', text: 'Tap your avatar to open your profile and settings.' },
+    { r: 'profile', t: '[data-act="ff"]', goal: () => !!tutDid.ff, mood: 'hampir', title: 'Demo mode', text: 'Tap Fast-forward 1 day to watch expiry dates move and the bear change mood.' },
+    { r: 'profile', t: '[data-act="tutorial"]', mood: 'aman', title: 'Replay any time', text: 'You can run this tutorial again from here whenever you like.' },
+    { r: 'home', mood: 'aman', title: "You're all set!", text: '' },
+  ];
+  V.tutorial = () => ''; // #/tutorial/0 is only an entry point: render() starts the practice fridge and shows TUT[0]
+  function tutStart() {
+    if (tutBackup) return;
+    tutBackup = S; tutDid = {}; tutI = 0;
+    S = { user: S.user || { name: 'Kay', email: '' }, items: [], history: [], shopping: [], plan: {}, notif: false, lastNotif: '' };
+    draft = []; rest = []; selDay = KK.toISODate(today()); V._cat = 'All'; V._q = ''; V._lvl = ''; V._only = null;
+  }
+  function tutEnd() { // restore your real data and clear all practice leftovers
+    if (!tutBackup) return;
+    S = tutBackup; tutBackup = null; tutDid = {};
+    draft = []; rest = []; selDay = KK.toISODate(today()); V._cat = 'All'; V._q = ''; V._lvl = ''; V._only = null;
+  }
+  function tutFinish() {
+    const hadUser = tutBackup && tutBackup.user;
+    tutEnd();
+    if (hadUser && S.accounts && S.accounts[hadUser.email]) { S.accounts[hadUser.email].tutDone = true; save(); } // finished or skipped: not shown again for this account
+    const dest = hadUser ? (tutFrom || 'home') : 'login'; tutFrom = '';
+    if (location.hash === '#/' + dest) render(); else go(dest);
+  }
+  function tutOverlay() {
+    const s = TUT[tutI], last = tutI === TUT.length - 1, goal = !!s.goal;
+    const hadUser = tutBackup && tutBackup.user;
+    const text = last ? (hadUser ? "That's the whole tour. Your own fridge data was not touched." : "That's the whole tour! Next, sign in with a nickname. We'll fill your fridge with a few sample items so you can try everything.") : s.text;
+    return '<div class="tut" id="tut">' + [0, 1, 2, 3].map(i => '<div class="tut-blk" id="tutb' + i + '"></div>').join('') + '<div class="tut-spot" id="tutspot"></div>' +
+      '<div class="tut-card" id="tutcard" role="dialog" aria-label="App tutorial">' +
+      '<div class="tut-head">' + head(s.mood || 'aman', 'width:52px;flex-shrink:0') + '<div><small>Step ' + (tutI + 1) + ' of ' + TUT.length + (goal ? ' · <span class="tut-try">Your turn</span>' : '') + '</small><b>' + esc(s.title) + '</b></div></div>' +
+      '<p>' + esc(text) + '</p>' +
+      '<div class="tut-prog"><i style="width:' + Math.round((tutI + 1) / TUT.length * 100) + '%"></i></div>' +
+      '<div class="tut-btns">' + (last ? '' : '<button class="tut-skip" data-tut="end">Skip tutorial</button>') + '<span style="flex:1"></span>' +
+      (last ? '<button class="tut-btn primary" data-tut="end">' + (hadUser ? 'Done' : 'Sign in') + '</button>'
+        : goal ? '<button class="tut-btn soft" data-tut="next">Skip step</button>'
+        : '<button class="tut-btn primary" data-tut="next">' + esc(s.btn || 'Next') + '</button>') + '</div></div></div>';
+  }
+  // Spotlight the target(s); four invisible blockers cover everything else so only the highlighted area is usable.
+  function tutLayout() {
+    const tut = $id('tut'), spot = $id('tutspot'), card = $id('tutcard'), base = $app.querySelector('.screen'), s = TUT[tutI];
+    if (!tut || !spot || !card || !base || !s) return;
+    const blk = [0, 1, 2, 3].map(i => $id('tutb' + i)), app = $app.getBoundingClientRect();
+    card.style.transform = '';
+    if ($id('modal')) { tut.classList.add('hasmodal'); tut.classList.remove('nospot'); card.style.top = '10px'; return; } // a popup is open: let the user use it
+    tut.classList.remove('hasmodal');
+    const els = (s.t ? Array.from(base.querySelectorAll(s.t)) : []).filter(e => e.getClientRects().length);
+    const c = base.querySelector('.content');
+    if (els.length && c && c.contains(els[0])) c.scrollTop += els[0].getBoundingClientRect().top - c.getBoundingClientRect().top - 8;
+    const rs = els.map(e => e.getBoundingClientRect());
+    tut.classList.toggle('nospot', !rs.length);
+    if (!rs.length) { spot.style.display = 'none'; blk.forEach(b => { b.style.display = 'none'; }); card.style.top = '50%'; card.style.transform = 'translateY(-50%)'; return; }
+    const pad = 6, L = Math.min.apply(null, rs.map(r => r.left)) - pad - app.left, T = Math.min.apply(null, rs.map(r => r.top)) - pad - app.top,
+      R = Math.max.apply(null, rs.map(r => r.right)) + pad - app.left, B = Math.max.apply(null, rs.map(r => r.bottom)) + pad - app.top;
+    spot.style.display = 'block'; spot.classList.toggle('solid', !s.goal);
+    spot.style.left = L + 'px'; spot.style.top = T + 'px'; spot.style.width = (R - L) + 'px'; spot.style.height = (B - T) + 'px';
+    const box = (b, l, t, w, h) => { b.style.display = 'block'; b.style.left = l + 'px'; b.style.top = t + 'px'; b.style.width = Math.max(0, w) + 'px'; b.style.height = Math.max(0, h) + 'px'; };
+    box(blk[0], 0, 0, app.width, T); box(blk[1], 0, B, app.width, app.height - B);
+    box(blk[2], 0, T, L, B - T); box(blk[3], R, T, app.width - R, B - T);
+    const ch = card.offsetHeight; let top;
+    if (app.height - B >= ch + 20) top = B + 12; else if (T >= ch + 20) top = T - ch - 12; else top = app.height - ch - 14;
+    card.style.top = top + 'px';
+  }
+  function tutPaint() { const old = $id('tut'); if (old) old.remove(); $app.insertAdjacentHTML('beforeend', tutOverlay()); tutLayout(); setTimeout(tutLayout, 320); }
+  function tutAdvance() { // next step; open its screen first if you are somewhere else
+    if (tutI >= TUT.length - 1) return;
+    tutI++; const s = TUT[tutI];
+    if (s.r && route() !== s.r) go(s.r); else tutPaint();
+  }
+  function tutCheck() { // did the user finish this step's task? then move on
+    const s = TUT[tutI]; if (!tutBackup || !s || !s.goal) return false;
+    let ok = false; try { ok = !!s.goal(); } catch (e) { /* ignore */ }
+    if (ok) tutAdvance();
+    return ok;
+  }
+  function tutRefresh() { if (!tutBackup) return; if (!tutCheck()) tutLayout(); }
+
   /* ================= 5. OCR PIPELINE =================
-   * Flow: photo -> preprocess() -> getWorker().recognize() -> ocrLines() -> KK.parseLine() -> highlight -> review
+   * Flow: photo -> cropOpen() / cropSave() -> preprocess() -> getWorker().recognize() -> ocrLines() -> KK.parseLine() -> highlight -> review
    */
   const TESS_SRC = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   const ocr = { workerP: null, onProgress: null };
@@ -430,6 +567,104 @@
   };
   const STAGE = { 'loading tesseract core': 'Preparing OCR engine...', 'initializing tesseract': 'Preparing OCR engine...', 'loading language traineddata': 'Downloading language data (one-time)...', 'initializing api': 'Almost ready...', 'recognizing text': 'Reading receipt...' };
 
+  /* ---- Photo crop editor: shown after you take/choose a photo, BEFORE scanning ----
+   * crop.cv = working canvas (max 2600px, can be rotated); crop.box = crop rectangle as 0..1 fractions of the image.
+   * Drag the 8 handles to resize, drag inside the box to move it. "Save & scan" cuts the photo and sends it to the OCR.
+   */
+  function loadImg(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image')); };
+      img.src = url;
+    });
+  }
+  async function cropOpen(file) {
+    if (!file || !$id('frame')) return;
+    scanUI.err(''); scanUI.hint('Loading photo...');
+    try {
+      const img = await loadImg(file);
+      const sc = Math.min(1, 2600 / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * sc); cv.height = Math.round(img.naturalHeight * sc);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      if (crop && crop.url) URL.revokeObjectURL(crop.url);
+      crop = { cv: cv, box: { x: .06, y: .06, w: .88, h: .88 }, url: null };
+      await cropShow();
+    } catch (e) { crop = null; scanUI.hint('Point the camera at your receipt'); scanUI.err('Could not open that photo. Try another one.'); }
+  }
+  function cropShow() {
+    return new Promise(res => {
+      if (!crop) return res();
+      crop.cv.toBlob(b => {
+        if (!crop) return res();
+        if (crop.url) URL.revokeObjectURL(crop.url);
+        crop.url = URL.createObjectURL(b);
+        cropRender(); res();
+      }, 'image/jpeg', .92);
+    });
+  }
+  function cropRender() {
+    const f = $id('frame'); if (!f || !crop) return;
+    f.classList.remove('has-shot', 'scanning'); f.classList.add('cropping');
+    f.innerHTML = '<div class="crop-stage"><div class="crop-wrap" id="cropwrap"><img id="cropimg" alt="Receipt photo to crop" draggable="false" src="' + crop.url + '">' +
+      '<div class="crop-box" id="cropbox">' + ['tl', 't', 'tr', 'r', 'br', 'b', 'bl', 'l'].map(h => '<i class="h-' + h + '" data-h="' + h + '"></i>').join('') + '</div></div></div>';
+    const cc = $id('cropctl'), sc = $id('scanctl'); if (cc) cc.hidden = false; if (sc) sc.hidden = true;
+    scanUI.err(''); scanUI.prog(null); scanUI.hint('Drag the corners or edges to adjust the crop box, or drag inside it to move it.');
+    cropPaint(); cropBind();
+  }
+  function cropPaint() {
+    const b = $id('cropbox'); if (!b || !crop) return; const c = crop.box;
+    b.style.left = (c.x * 100) + '%'; b.style.top = (c.y * 100) + '%'; b.style.width = (c.w * 100) + '%'; b.style.height = (c.h * 100) + '%';
+  }
+  function cropBind() {
+    const wrap = $id('cropwrap'), box = $id('cropbox'); if (!wrap || !box) return;
+    const cl = (v, a, b) => Math.min(b, Math.max(a, v)); let drag = null;
+    wrap.addEventListener('pointerdown', e => {
+      const h = e.target.dataset && e.target.dataset.h;
+      if (!h && e.target !== box) return;
+      e.preventDefault(); const r = wrap.getBoundingClientRect();
+      drag = { h: h || 'move', x: e.clientX, y: e.clientY, b: Object.assign({}, crop.box), w: r.width, hh: r.height };
+      try { wrap.setPointerCapture(e.pointerId); } catch (er) { /* ignore */ }
+    });
+    wrap.addEventListener('pointermove', e => {
+      if (!drag || !crop) return;
+      const dx = (e.clientX - drag.x) / drag.w, dy = (e.clientY - drag.y) / drag.hh, MIN = 0.08;
+      let x0 = drag.b.x, y0 = drag.b.y, x1 = x0 + drag.b.w, y1 = y0 + drag.b.h;
+      if (drag.h === 'move') { const w = drag.b.w, hh = drag.b.h; x0 = cl(x0 + dx, 0, 1 - w); y0 = cl(y0 + dy, 0, 1 - hh); x1 = x0 + w; y1 = y0 + hh; }
+      else {
+        if (drag.h.includes('l')) x0 = cl(x0 + dx, 0, x1 - MIN);
+        if (drag.h.includes('r')) x1 = cl(x1 + dx, x0 + MIN, 1);
+        if (drag.h.includes('t')) y0 = cl(y0 + dy, 0, y1 - MIN);
+        if (drag.h.includes('b')) y1 = cl(y1 + dy, y0 + MIN, 1);
+      }
+      crop.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; cropPaint();
+    });
+    const end = () => { drag = null; };
+    wrap.addEventListener('pointerup', end); wrap.addEventListener('pointercancel', end);
+  }
+  function cropRotate() { // rotate the working photo 90 degrees clockwise
+    if (!crop) return;
+    const s = crop.cv, c = document.createElement('canvas'); c.width = s.height; c.height = s.width;
+    const g = c.getContext('2d'); g.translate(c.width / 2, c.height / 2); g.rotate(Math.PI / 2); g.drawImage(s, -s.width / 2, -s.height / 2);
+    crop.cv = c; crop.box = { x: .06, y: .06, w: .88, h: .88 }; cropShow();
+  }
+  function cropEnd() { // leave the editor and restore the normal scan buttons
+    if (crop && crop.url) URL.revokeObjectURL(crop.url);
+    crop = null;
+    const f = $id('frame'); if (f) f.classList.remove('cropping');
+    const cc = $id('cropctl'), sc = $id('scanctl'); if (cc) cc.hidden = true; if (sc) sc.hidden = false;
+  }
+  async function cropSave() { // cut the photo to the box, then scan it
+    if (!crop) return;
+    const cv = crop.cv, b = crop.box, sx = Math.round(b.x * cv.width), sy = Math.round(b.y * cv.height);
+    const sw = Math.max(16, Math.min(cv.width - sx, Math.round(b.w * cv.width))), sh = Math.max(16, Math.min(cv.height - sy, Math.round(b.h * cv.height)));
+    const out = document.createElement('canvas'); out.width = sw; out.height = sh;
+    out.getContext('2d').drawImage(cv, sx, sy, sw, sh, 0, 0, sw, sh);
+    const blob = await new Promise(r => out.toBlob(r, 'image/jpeg', .95));
+    cropEnd();
+    handleFile(blob);
+  }
+
   function startReview(res) {
     draft = res.items.map(it => Object.assign({}, it, { expiry: KK.toISODate(KK.addDays(today(), it.days)) }));
     rest = res.others; go('review');
@@ -486,19 +721,25 @@
   }
 
   /* ================= 6. ROUTER & EVENTS ================= */
-  const PUBLIC = ['splash', 'onb', 'login'];
+  const PUBLIC = ['splash', 'onb', 'login', 'tutorial'];
   function render() {
     clearTimeout(timer); closeModal();
     const parts = location.hash.replace(/^#\/?/, '').split('/'); let r = parts[0] || 'splash'; const arg = parts[1];
     if (!V[r]) r = 'splash';
+    if (r === 'tutorial') { tutStart(); tutI = 0; r = TUT[0].r; history.replaceState(null, '', '#/' + r); } // practice fridge starts here
+    else if (tutBackup && ['splash', 'onb', 'login'].includes(r)) tutEnd();                              // left the tutorial: restore real data
+    if (crop && r !== 'scan') cropEnd();
     if (!S.user && !PUBLIC.includes(r)) r = 'onb';
     $app.dataset.screen = r;
+    if (tutBackup) $app.dataset.tutmode = '1'; else delete $app.dataset.tutmode;
     $app.innerHTML = V[r](r === 'onb' && !arg ? 1 : arg);
     const c = $app.querySelector('.content'); if (c) c.scrollTop = 0;
     if (r !== 'recipes') V._only = null;
     if (r === 'scan') setTimeout(() => { getWorker().catch(() => { /* offline: handled when scanning */ }); }, 400); // warm up the OCR engine
+    if (tutBackup) { $app.insertAdjacentHTML('beforeend', tutOverlay()); tutLayout(); setTimeout(tutLayout, 320); tutCheck(); }
   }
   window.addEventListener('hashchange', render);
+  window.addEventListener('resize', () => { if (tutBackup) tutLayout(); });
 
   function removeItem(it, type) {
     S.history.push({ type: type, name: it.name });
@@ -515,22 +756,39 @@
   }
 
   $app.addEventListener('click', async e => {
+    const tb = e.target.closest('.tut [data-tut]'); // tutorial buttons
+    if (tb) {
+      const k = tb.dataset.tut;
+      if (k === 'next') tutAdvance(); else tutFinish();
+      return;
+    }
     const el = e.target.closest('[data-go],[data-act]'); if (!el) return;
     if (el.dataset.go) { go(el.dataset.go); return; }
     const a = el.dataset.act, id = el.dataset.id;
+    if (tutBackup && a) tutDid[a] = true; // remembers which buttons were tapped (used by tutorial goals)
     switch (a) {
       case 'close': closeModal(); break;
       case 'legend': legendModal(); break;
+      case 'tutorial': tutFrom = 'profile'; go('tutorial/0'); break;
       case 'ff': { // demo: fast-forward 1 day (all dates move back by 1 day)
         const sh = iso => KK.toISODate(KK.addDays(new Date(iso + 'T00:00:00'), -1));
         S.items.forEach(i => { i.expiry = sh(i.expiry); if (i.bought) i.bought = sh(i.bought); });
         save(); toast('Clock moved forward 1 day. Watch the bear!'); closeModal(); render(); break;
       }
-      case 'login': {
-        const n = document.getElementById('lname').value.trim() || 'Kay';
-        S.user = { name: n.slice(0, 20), email: document.getElementById('lmail').value.trim() };
+      case 'login': { // all fields required; same email + wrong password is rejected
+        const n = $id('lname').value.trim(), em = $id('lmail').value.trim().toLowerCase(), pw = $id('lpass').value;
+        const fail = (msg, field) => { $id('lerr').textContent = msg; ['lname', 'lmail', 'lpass'].forEach(i => $id(i).classList.toggle('bad', i === field)); $id(field).focus(); };
+        if (n.length < 2) { fail('Enter a nickname (at least 2 characters).', 'lname'); break; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { fail('Enter a valid email address, like name@email.com.', 'lmail'); break; }
+        if (pw.length < 6) { fail('Password must be at least 6 characters.', 'lpass'); break; }
+        const h = await hashPw(em + ':' + pw);
+        S.accounts = S.accounts || {};
+        if (S.accounts[em] && S.accounts[em].hash !== h) { fail('Wrong password for this email.', 'lpass'); break; }
+        const seen = !!(S.accounts[em] && S.accounts[em].tutDone);      // has THIS account already finished the tutorial?
+        S.accounts[em] = { name: n.slice(0, 20), hash: h, tutDone: seen }; // new email = register, known email = log in
+        S.user = { name: n.slice(0, 20), email: em };
         if (!S.items.length && !S.history.length) seed();
-        save(); go('home'); break;
+        tutFrom = ''; save(); go(seen ? 'home' : 'tutorial/0'); break;   // new account (or tutorial never finished) -> hands-on tutorial, skippable
       }
       case 'cat': V._cat = el.dataset.v; render(); break;
       case 'lvl': { // filter the fridge by freshness level
@@ -545,6 +803,10 @@
       case 'pick-cam': $id('fcam').click(); break;
       case 'pick-gal': $id('fgal').click(); break;
       case 'demo-receipt': handleFile(await demoReceiptBlob(), { fallback: true }); break;
+      case 'crop-rotate': cropRotate(); break;
+      case 'crop-reset': if (crop) { crop.box = { x: .06, y: .06, w: .88, h: .88 }; cropPaint(); } break;
+      case 'crop-cancel': cropEnd(); render(); break;
+      case 'crop-save': cropSave(); break;
       case 'del-draft': draft.splice(+el.dataset.i, 1); render(); break;
       case 'add-other': { const r = rest.splice(+el.dataset.i, 1)[0]; if (r) draft.push(Object.assign({}, r, { expiry: KK.toISODate(KK.addDays(today(), r.days)) })); render(); break; }
       case 'save-draft': {
@@ -601,9 +863,11 @@
     }
   });
 
+  $app.addEventListener('click', () => { if (tutBackup) setTimeout(tutRefresh, 60); }); // re-check the tutorial goal after every tap
+
   $app.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'fcam' || t.id === 'fgal') { handleFile(t.files[0]); t.value = ''; return; }
+    if (t.id === 'fcam' || t.id === 'fgal') { cropOpen(t.files[0]); t.value = ''; return; } // photo -> crop editor -> scan
     if (t.dataset.act === 'shop-toggle') { const x = S.shopping.find(y => y.id === t.dataset.id); if (x) { x.done = t.checked; save(); render(); } return; }
     if (t.dataset.field) {
       const it = S.items.find(i => i.id === t.dataset.id); if (!it) return;
@@ -625,7 +889,11 @@
     if (t.id === 'search') { V._q = t.value; const pos = t.selectionStart; render(); const s = $id('search'); if (s) { s.focus(); s.setSelectionRange(pos, pos); } return; }
     if (t.dataset.d !== undefined) { const d = draft[+t.dataset.d], f = t.dataset.f; if (d) d[f] = t.value; }
   });
-  $app.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'shopin') { e.preventDefault(); $app.querySelector('[data-act="shop-add"]').click(); } });
+  $app.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    if (e.target.id === 'shopin') { e.preventDefault(); $app.querySelector('[data-act="shop-add"]').click(); }
+    if (['lname', 'lmail', 'lpass'].includes(e.target.id)) { e.preventDefault(); $app.querySelector('[data-act="login"]').click(); }
+  });
 
   render(); notifyDue();
 })();
