@@ -351,13 +351,19 @@ button.legend-row { width: 100%; text-align: left; }
 
 /* --- close-up mascot (head) on splash + onboarding --- */
 .mascot { backface-visibility: hidden; }
-.splash .big-bear { left: 0; right: 0; bottom: 0; width: 100%; display: flex; justify-content: center; }
-.splash .big-bear .mascot { width: 86%; max-width: 400px; height: auto; margin: 0 auto; }
+.splash .big-bear { left: 0; right: 0; bottom: -18%; width: 100%; display: block; }
+.splash .big-bear .mascot {
+  position: relative;
+  left: 14%;          /* geser ke kanan; makin besar makin ke kanan */
+  width: 120%;        /* ukuran beruang; kepotong di kanan karena melewati layar */
+  max-width: none;    /* wajib, kalau tidak ukurannya mentok di 100% */
+  height: auto;
+  margin: 0;
+}
 .onb-card .mascot.close {
-  position: absolute; left: 50%; top: 50%; width: auto; height: 88%; max-width: 88%;
+  position: absolute; left: 50%; top: 50%; width: auto; height: 110%; max-width: 110%;
   transform: translate(-50%, -50%); object-fit: contain;
 }
-
 /* --- tutorial overlay (hands-on: only the spotlighted area is usable) --- */
 #app[data-tutmode] .screen { animation: none; }
 #app[data-tutmode] .modal { max-height: 60%; }
@@ -431,3 +437,4 @@ button.legend-row { width: 100%; text-align: left; }
 .onb.login { padding-top: clamp(28px, 6dvh, 60px); }
 .field-err { color: var(--red); font-size: 12px; font-weight: 600; min-height: 16px; margin-top: 8px; }
 .input.bad { border-color: var(--red); }
+

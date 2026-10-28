@@ -26,10 +26,10 @@
     basi: 'Queasy. Past its date, check before eating.',
   };
   // Full-body poses: assets/pose-<n>.png. To swap a pose on a screen, just change its number here.
-  const POSE = { login: 5, add: 3, empty: 3, happy: 6, recipes: 5 };
+  const POSE = { splash: 1, login: 5, add: 3, empty: 3, happy: 6, recipes: 5 };
   // CLOSE-UP mascot (head only, sharper than the full-body pose) for the splash and onboarding screens.
   // The value is a mood file: assets/mascot-<mood>.png (aman, baik, cukup, hampir, basi). Change the mood per screen here.
-  const CLOSE = { splash: 'aman', onb1: 'aman', onb2: 'cukup', onb3: 'baik' };
+  const CLOSE = { onb1: 'aman', onb2: 'cukup', onb3: 'baik' };
   // Navbar icons: assets/<file>; the emoji is used if the file is missing.
   const NAV = {
     home: ['nav-home.png', '🏠', 'Home'],
@@ -207,8 +207,7 @@
 
   V.splash = () => {
     timer = setTimeout(() => go(S.user ? 'home' : 'onb/1'), 2200);
-    return '<div class="screen splash"><div class="splash-title"><h1>KulkasKita</h1><p>Eat it before it expires.</p></div><div class="big-bear">' + head(CLOSE.splash, '', 'close mood-' + CLOSE.splash) + '</div></div>';
-  };
+    return '<div class="screen splash"><div class="splash-title"><h1>KulkasKita</h1><p>Eat it before it expires.</p></div><div class="big-bear">' + pose('splash', '', 'mood-aman') + '</div></div>';  };
 
   // Small line icons for the onboarding chips
   const IC = {
@@ -788,7 +787,7 @@
         S.accounts[em] = { name: n.slice(0, 20), hash: h, tutDone: seen }; // new email = register, known email = log in
         S.user = { name: n.slice(0, 20), email: em };
         if (!S.items.length && !S.history.length) seed();
-        tutFrom = ''; save(); go(seen ? 'home' : 'tutorial/0'); break;   // new account (or tutorial never finished) -> hands-on tutorial, skippable
+        tutFrom = ''; save(); go('tutorial/0'); break; // tutorial setiap login
       }
       case 'cat': V._cat = el.dataset.v; render(); break;
       case 'lvl': { // filter the fridge by freshness level
