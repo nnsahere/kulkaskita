@@ -55,8 +55,6 @@ photo → crop → preprocess → OCR → line parser → food match → review 
 5. **Estimate:** expiry date = purchase date + typical shelf life for that food.
 6. **Review:** the user fixes anything that is off and saves the items to the fridge.
 
-> **About "AI":** OCR is machine-learning based (Tesseract). Matching and shelf-life estimates are rule-based, using a food database with typical storage times. They are estimates and can always be adjusted.
-
 ## Tech stack
 
 - HTML, CSS, and vanilla JavaScript (no framework, no build step)
