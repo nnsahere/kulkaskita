@@ -4,7 +4,6 @@
 
 A smart virtual fridge that helps households cut food waste. Scan a grocery receipt, let the app log every item with an estimated expiry date, and watch a friendly polar bear change its mood to show how fresh your fridge is.
 
-Built for **SIC 2026** · Theme: *Human as the End of Innovation* · **SDG 12: Responsible Consumption and Production**
 
 ---
 
